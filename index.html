@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>cDAQ-9181 Data Acquisition</title>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+  <!-- Theme: inline to avoid flash -->
+  <script>
+    (function() {
+      var key = 'cdaq9181-theme';
+      var stored = localStorage.getItem(key);
+      var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      if (!stored) localStorage.setItem(key, theme);
+
+      window._cdaq9181ToggleTheme = function() {
+        var cur = document.documentElement.getAttribute('data-theme');
+        var next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem(key, next);
+        var btn = document.getElementById('themeToggle');
+        if (btn) {
+          btn.textContent = next === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+          btn.title = next === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        }
+      };
+    })();
+  </script>
+  <!-- Chart.js + date adapter (pinned versions) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</head>
+
+<body>
+  <!-- ── Toolbar ──────────────────────────────────────────── -->
+  <nav class="toolbar">
+    <!-- Connection -->
+    <div class="toolbar-group">
+      <span class="status-dot" id="statusDot"></span>
+      <button id="connectWs">Connect</button>
+      <input type="text" id="wsUrl" class="ws-url-input" value="ws://localhost:8765" placeholder="ws://host:port" />
+      <button id="disconnect" disabled>Disconnect</button>
+    </div>
+
+    <!-- Measurement -->
+    <div class="toolbar-group">
+      <button id="startMeasure" data-requires-connection disabled>Play</button>
+      <button id="stopMeasure" disabled>Stop</button>
+    </div>
+
+    <!-- Recording -->
+    <div class="toolbar-group">
+      <button id="startRecord" data-requires-connection disabled>Record</button>
+      <button id="stopRecord" disabled>Save</button>
+    </div>
+
+    <!-- Rates -->
+    <div class="toolbar-group">
+      <div class="sampling-inline">
+        <span class="unit-label">Sample</span>
+        <input type="number" id="sampleRate" value="1" min="0.1" step="0.1" />
+        <span class="unit-label">Hz</span>
+      </div>
+      <div class="sampling-inline">
+        <span class="unit-label">Plot</span>
+        <input type="number" id="plotRate" value="1" min="0.1" step="0.1" />
+        <span class="unit-label">Hz</span>
+      </div>
+    </div>
+
+    <div class="toolbar-spacer"></div>
+
+    <!-- Demo + Theme toggle -->
+    <button id="demo">Demo</button>
+    <button class="theme-toggle" id="themeToggle" onclick="_cdaq9181ToggleTheme()" title="Toggle theme">&#127769;</button>
+    <script>
+      (function() {
+        var d = document.documentElement.getAttribute('data-theme') === 'dark';
+        var b = document.getElementById('themeToggle');
+        if (b) { b.textContent = d ? '\u2600\uFE0F' : '\uD83C\uDF19'; b.title = d ? 'Switch to light mode' : 'Switch to dark mode'; }
+      })();
+    </script>
+  </nav>
+
+  <!-- ── Main Content ─────────────────────────────────────── -->
+  <main class="main-content">
+    <!-- 4-Channel Live Readout -->
+    <div class="readout">
+      <div class="readout-grid">
+        <div class="readout-channel">
+          <span class="readout-label ch1" id="labelCH1">CH1</span>
+          <span class="readout-value" id="readoutCH1">---</span>
+          <span class="readout-unit" id="unitCH1">V</span>
+        </div>
+        <div class="readout-channel">
+          <span class="readout-label ch2" id="labelCH2">CH2</span>
+          <span class="readout-value" id="readoutCH2">---</span>
+          <span class="readout-unit" id="unitCH2">V</span>
+        </div>
+        <div class="readout-channel">
+          <span class="readout-label ch3" id="labelCH3">CH3</span>
+          <span class="readout-value" id="readoutCH3">---</span>
+          <span class="readout-unit" id="unitCH3">V</span>
+        </div>
+        <div class="readout-channel">
+          <span class="readout-label ch4" id="labelCH4">CH4</span>
+          <span class="readout-value" id="readoutCH4">---</span>
+          <span class="readout-unit" id="unitCH4">V</span>
+        </div>
+      </div>
+      <div class="readout-footer">
+        <span class="readout-time" id="readoutTime"></span>
+        <span class="device-info" id="deviceInfo"></span>
+      </div>
+    </div>
+
+    <!-- Channel Scaling -->
+    <details>
+      <summary>Channel Scaling</summary>
+      <div class="details-content">
+        <div class="scaling-locked-notice" id="scalingLockedNotice">Scaling is locked while recording. Stop recording to change settings.</div>
+        <div class="scaling-grid">
+          <div class="scaling-channel">
+            <div class="scaling-channel-header ch1">Channel 1</div>
+            <div class="scaling-field"><label>Label</label><input type="text" id="scalingCH1Label" value="CH1" /></div>
+            <div class="scaling-field"><label>Unit</label><input type="text" id="scalingCH1Unit" value="V" /></div>
+            <div class="scaling-field"><label>Slope</label><input type="number" id="scalingCH1Slope" value="1" step="any" /></div>
+            <div class="scaling-field"><label>Offset</label><input type="number" id="scalingCH1Offset" value="0" step="any" /></div>
+          </div>
+          <div class="scaling-channel">
+            <div class="scaling-channel-header ch2">Channel 2</div>
+            <div class="scaling-field"><label>Label</label><input type="text" id="scalingCH2Label" value="CH2" /></div>
+            <div class="scaling-field"><label>Unit</label><input type="text" id="scalingCH2Unit" value="V" /></div>
+            <div class="scaling-field"><label>Slope</label><input type="number" id="scalingCH2Slope" value="1" step="any" /></div>
+            <div class="scaling-field"><label>Offset</label><input type="number" id="scalingCH2Offset" value="0" step="any" /></div>
+          </div>
+          <div class="scaling-channel">
+            <div class="scaling-channel-header ch3">Channel 3</div>
+            <div class="scaling-field"><label>Label</label><input type="text" id="scalingCH3Label" value="CH3" /></div>
+            <div class="scaling-field"><label>Unit</label><input type="text" id="scalingCH3Unit" value="V" /></div>
+            <div class="scaling-field"><label>Slope</label><input type="number" id="scalingCH3Slope" value="1" step="any" /></div>
+            <div class="scaling-field"><label>Offset</label><input type="number" id="scalingCH3Offset" value="0" step="any" /></div>
+          </div>
+          <div class="scaling-channel">
+            <div class="scaling-channel-header ch4">Channel 4</div>
+            <div class="scaling-field"><label>Label</label><input type="text" id="scalingCH4Label" value="CH4" /></div>
+            <div class="scaling-field"><label>Unit</label><input type="text" id="scalingCH4Unit" value="V" /></div>
+            <div class="scaling-field"><label>Slope</label><input type="number" id="scalingCH4Slope" value="1" step="any" /></div>
+            <div class="scaling-field"><label>Offset</label><input type="number" id="scalingCH4Offset" value="0" step="any" /></div>
+          </div>
+        </div>
+        <p style="margin-top:0.75rem; font-size:0.8rem; color:var(--text-muted);">
+          Scaled value = slope &times; voltage + offset. Changes are saved to localStorage automatically.
+        </p>
+      </div>
+    </details>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+      <div class="stat-group">
+        <div class="stat-group-header ch1" id="statHeaderCH1">CH1</div>
+        <div class="stat-row">
+          <div class="stat-item"><div class="stat-label">Min</div><div class="stat-value" id="statCH1Min">---</div></div>
+          <div class="stat-item"><div class="stat-label">Max</div><div class="stat-value" id="statCH1Max">---</div></div>
+          <div class="stat-item"><div class="stat-label">Avg</div><div class="stat-value" id="statCH1Mean">---</div></div>
+        </div>
+      </div>
+      <div class="stat-group">
+        <div class="stat-group-header ch2" id="statHeaderCH2">CH2</div>
+        <div class="stat-row">
+          <div class="stat-item"><div class="stat-label">Min</div><div class="stat-value" id="statCH2Min">---</div></div>
+          <div class="stat-item"><div class="stat-label">Max</div><div class="stat-value" id="statCH2Max">---</div></div>
+          <div class="stat-item"><div class="stat-label">Avg</div><div class="stat-value" id="statCH2Mean">---</div></div>
+        </div>
+      </div>
+      <div class="stat-group">
+        <div class="stat-group-header ch3" id="statHeaderCH3">CH3</div>
+        <div class="stat-row">
+          <div class="stat-item"><div class="stat-label">Min</div><div class="stat-value" id="statCH3Min">---</div></div>
+          <div class="stat-item"><div class="stat-label">Max</div><div class="stat-value" id="statCH3Max">---</div></div>
+          <div class="stat-item"><div class="stat-label">Avg</div><div class="stat-value" id="statCH3Mean">---</div></div>
+        </div>
+      </div>
+      <div class="stat-group">
+        <div class="stat-group-header ch4" id="statHeaderCH4">CH4</div>
+        <div class="stat-row">
+          <div class="stat-item"><div class="stat-label">Min</div><div class="stat-value" id="statCH4Min">---</div></div>
+          <div class="stat-item"><div class="stat-label">Max</div><div class="stat-value" id="statCH4Max">---</div></div>
+          <div class="stat-item"><div class="stat-label">Avg</div><div class="stat-value" id="statCH4Mean">---</div></div>
+        </div>
+      </div>
+      <div class="stat-count">
+        <div class="stat-label">Count</div>
+        <div class="stat-value" id="statCount">0</div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="chart-section">
+      <div class="chart-controls">
+        <label for="timeRange">Window</label>
+        <select id="timeRange">
+          <option value="30">30 s</option>
+          <option value="60">1 min</option>
+          <option value="300" selected>5 min</option>
+          <option value="600">10 min</option>
+          <option value="1800">30 min</option>
+        </select>
+        <label for="yMin">Y Min</label>
+        <input type="number" id="yMin" placeholder="Auto" step="0.1" />
+        <label for="yMax">Y Max</label>
+        <input type="number" id="yMax" placeholder="Auto" step="0.1" />
+        <button id="resetZoom">Reset</button>
+        <button id="clearChart">Clear</button>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="chartCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- How to Use -->
+    <details open>
+      <summary>How to Use</summary>
+      <div class="details-content help-content">
+        <h4>1. Connect to your cDAQ-9181</h4>
+        <dl>
+          <dt>Bridge (any browser)</dt>
+          <dd>Start the bridge: <code>uv run bridge.py</code>, then click <strong>Connect</strong>. The bridge discovers the cDAQ device, reads voltages via NI-DAQmx, and serves JSON data over WebSocket.</dd>
+        </dl>
+
+        <h4>2. Toolbar buttons</h4>
+        <dl>
+          <dt>Play / Stop</dt>
+          <dd>Start or stop automatic polling. <strong>Sample</strong> rate controls how often the bridge is polled (all readings go to the CSV). <strong>Plot</strong> rate controls how often the chart and display update (can be lower to keep the UI fast at high sample rates).</dd>
+          <dt>Record / Save</dt>
+          <dd><strong>Record</strong> captures every reading with a timestamp. <strong>Save</strong> stops and downloads a CSV file with columns using the current scaling labels and units.</dd>
+        </dl>
+
+        <h4>3. Channel Scaling</h4>
+        <p>Each channel can be linearly scaled from raw voltage to engineering units. Set the <strong>label</strong>, <strong>unit</strong>, <strong>slope</strong>, and <strong>offset</strong> per channel. Formula: <code>scaled = slope &times; voltage + offset</code>. Config is saved to localStorage.</p>
+
+        <h4>4. Chart</h4>
+        <p>4 colored lines show all channels simultaneously. Click legend entries to show/hide individual channels. <strong>Window</strong> sets how much history to show. <strong>Y Min/Max</strong> lock the vertical axis. <strong>Clear</strong> erases all data and resets statistics.</p>
+
+        <h4>5. Demo mode</h4>
+        <p>Click <strong>Demo</strong> to generate fake 4-channel voltage data and try out the interface without hardware. Scaling is applied to demo data too.</p>
+
+        <h4>6. Typical workflow</h4>
+        <p>Connect &rarr; <strong>Record</strong> &rarr; <strong>Play</strong> &rarr; watch live readings and chart &rarr; <strong>Stop</strong> &rarr; <strong>Save</strong> to download CSV.</p>
+
+        <h4>Running locally</h4>
+        <p>Don't open <code>index.html</code> directly &mdash; ES modules need a web server. Run <code>uv run serve.py</code> and open <strong>http://localhost:8000</strong>.</p>
+      </div>
+    </details>
+
+    <!-- Log -->
+    <details>
+      <summary>Log</summary>
+      <div class="details-content">
+        <pre class="log-output" id="logOutput"></pre>
+      </div>
+    </details>
+
+    <!-- Protocol Reference -->
+    <details>
+      <summary>WebSocket JSON Protocol</summary>
+      <div class="details-content help-content">
+        <h4>Commands (Browser &rarr; Bridge)</h4>
+        <table>
+          <thead>
+            <tr><th>Command</th><th>JSON</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Info</td><td><code>{"cmd":"info"}</code></td><td>Request device info (name, product, channel count)</td></tr>
+            <tr><td>Configure</td><td><code>{"cmd":"configure", ...}</code></td><td>Configure channels, sample rate, and voltage range</td></tr>
+            <tr><td>Read</td><td><code>{"cmd":"read"}</code></td><td>Request a single reading (4 voltages)</td></tr>
+            <tr><td>Start</td><td><code>{"cmd":"start"}</code></td><td>Begin continuous streaming</td></tr>
+            <tr><td>Stop</td><td><code>{"cmd":"stop"}</code></td><td>Stop streaming</td></tr>
+          </tbody>
+        </table>
+
+        <h4>Responses (Bridge &rarr; Browser)</h4>
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Fields</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>reading</td><td><code>channels: [float, ...]</code></td><td>4-channel voltage reading</td></tr>
+            <tr><td>info</td><td><code>device, product, channels</code></td><td>Device identification</td></tr>
+            <tr><td>configured</td><td><code>channels, rate, range</code></td><td>Configuration acknowledgment</td></tr>
+            <tr><td>error</td><td><code>message</code></td><td>Error description</td></tr>
+          </tbody>
+        </table>
+
+        <h4>Hardware</h4>
+        <p>NI cDAQ-9181 chassis (1-slot, Ethernet) with NI-9215 module (4-channel, &plusmn;10V, 16-bit simultaneous sampling). The bridge uses <code>nidaqmx</code> to configure and read from the hardware.</p>
+      </div>
+    </details>
+  </main>
+
+  <!-- Toast notifications -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Module load failure banner -->
+  <div id="moduleWarning" style="display:none; position:fixed; top:0; left:0; right:0; z-index:999;
+    background:#dc2626; color:#fff; padding:0.75rem 1rem; text-align:center; font-family:system-ui,sans-serif; font-size:0.9rem;">
+    App modules failed to load. You probably opened this file directly &mdash; ES modules require a web server.<br>
+    Run <strong style="font-family:monospace">uv run serve.py</strong> then open <strong>http://localhost:8000</strong>
+  </div>
+  <script>
+    window._cdaq9181ModulesLoaded = false;
+    setTimeout(function() {
+      if (!window._cdaq9181ModulesLoaded) {
+        document.getElementById('moduleWarning').style.display = 'block';
+      }
+    }, 2000);
+  </script>
+</body>
+
+</html>
