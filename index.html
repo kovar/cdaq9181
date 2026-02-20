@@ -226,6 +226,24 @@
     <details open>
       <summary>How to Use</summary>
       <div class="details-content help-content">
+        <h4>0. Install NI-DAQmx</h4>
+        <p>The bridge requires the NI-DAQmx runtime on the machine running <code>bridge.py</code>. The <code>nidaqmx</code> Python package is installed automatically by <code>uv</code>, but it depends on NI's driver being present.</p>
+        <dl>
+          <dt>Windows</dt>
+          <dd>Download and install <strong>NI-DAQmx</strong> from
+            <a href="https://www.ni.com/en/support/downloads/drivers/download.ni-daq-mx.html" target="_blank" rel="noopener">ni.com → Downloads → NI-DAQmx</a>.
+            The installer is ~500 MB and a reboot is typically required. Afterwards, verify the cDAQ-9181 appears in <strong>NI Measurement &amp; Automation Explorer (NI MAX)</strong>.
+          </dd>
+          <dt>Linux (Ubuntu 20.04/22.04, RHEL/CentOS)</dt>
+          <dd>Download the NI Linux Device Drivers installer and select NI-DAQmx from the package list:
+            <br><code>wget https://download.ni.com/ni-linux-installer/ni-linux-installer.sh</code>
+            <br><code>chmod +x ni-linux-installer.sh &amp;&amp; sudo ./ni-linux-installer.sh</code>
+            <br>Full instructions at <a href="https://www.ni.com/en/support/downloads/drivers/download.ni-linux-device-drivers.html" target="_blank" rel="noopener">NI Linux Device Drivers</a>.
+          </dd>
+          <dt>macOS</dt>
+          <dd>NI-DAQmx is <strong>not available for macOS</strong>. Run <code>bridge.py</code> on a Windows or Linux machine, then point the browser to that machine: change the WebSocket URL to <code>ws://&lt;host-ip&gt;:8765</code> before clicking Connect.</dd>
+        </dl>
+
         <h4>1. Connect to your cDAQ-9181</h4>
         <dl>
           <dt>Bridge (any browser)</dt>
