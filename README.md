@@ -1,3 +1,5 @@
+> **Note:** The NI cDAQ-9181 has never been supported on Linux. NI-DAQmx for Linux does not and will not support this chassis. This repository is not valid for Linux use.
+
 # cDAQ-9181 Data Acquisition
 
 Web application for reading voltage data from an NI cDAQ-9181 chassis with NI-9215 module (4-channel ±10V analog input).
